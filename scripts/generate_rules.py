@@ -46,7 +46,6 @@ GUARANTEED_DOMAINS = [
     "ad-matrix.jp", "bypass.jp", "smart-c.jp", "appdriver.jp", "accesstrade.net",
     "a8.net", "valuecommerce.com", "rentracks.jp", "felmat.net", "link-a.net",
     
-    # 海外主要アドネットワーク
     # 海外主要アドネットワーク & ポップアップ/ポップアンダー/リダイレクト広告
     "criteo.com", "criteo.net", "static.criteo.net", "outbrain.com", "taboola.com",
     "adnxs.com", "rubiconproject.com", "pubmatic.com", "openx.net", "smartadserver.com",
@@ -64,13 +63,13 @@ GUARANTEED_DOMAINS = [
     "scorecardresearch.com", "quantserve.com", "chartbeat.com", "clarity.ms",
     "hotjar.com", "mixpanel.com", "segment.io", "amplitude.com", "userlocal.jp",
     "ptengine.jp", "privacymanager.io", "ats-wrapper.privacymanager.io", "flux-cdn.com",
-    "html-load.com",
+    "html-load.com", "onelink.me",
     
     # 汎用アンチ・アドブロック検知サービス (予防遮断)
     "getadmiral.com", "admiral.com", "adrecover.com", "blockadblock.com",
     "antiadblock.org", "antiblock.org", "detectadblock.com", "adblockdetector.com",
     "adunlock.com", "instartlogic.com", "pagefair.com", "pagefair.net",
-    "adblockanalytics.com", "adblock-checker.com", "antiadblocksystems.com"
+    "adblockanalytics.com", "adblock-checker.com", "antiadblocksystems.com", "ad-shield.io"
 ]
 
 for d in GUARANTEED_DOMAINS:
@@ -100,10 +99,10 @@ for url in UPSTREAM_URLS:
                 if line.startswith("##"):
                     sel = line[2:].strip()
                     # 検索窓や通常UIを巻き込まない安全フィルター
-                    if any(bad in sel for bad in ["*=", ":has", ":not", "body", "html", "main", "header", "nav", "article", "div"]):
+                    if any(bad in sel for bad in ["*=", ":not", "body", "html", "main", "header", "nav", "article", "div >"]):
                         continue
-                    if len(sel) > 3 and (sel.startswith(".") or sel.startswith("#")):
-                        if any(k in sel for k in ["ad", "banner", "sponsor", "pr", "yads", "dfp", "advert"]):
+                    if len(sel) > 3 and (sel.startswith(".") or sel.startswith("#") or sel.startswith("[") or sel.startswith("ins")):
+                        if any(k in sel for k in ["ad", "banner", "sponsor", "pr", "yads", "dfp", "advert", "jack", "ranking"]):
                             css_selectors.add(sel)
     except Exception as e:
         print(f"Warning: Failed to fetch {url}: {e}")
@@ -165,18 +164,23 @@ BASE_CSS = [
     ".js-jack-ad", ".gwt-jack-ad", ".gdb-feature_tile-item.is-pr",
     "div[class*=\"gdb-ad-footer\"]", "div[class*=\"gwt-ad-footer\"]",
     "a[class*=\"gdb-ad-footer\"]", "a[class*=\"gwt-ad-footer\"]",
+    ".c-floating-ad", ".c-floating-ad-overlay",
     "img[src*=\"/ad/gamedboverlay/\"]",
     "img[src*=\"/ad/rankingrecommend/\"]",
     "img[src*=\"/gamedb/autopanel/\"]",
     "a[href*=\"onelink.me\"]",
+    "a[href*=\"eggryptox\"]",
+    "div.is-pr", "span.is-pr", "div._rank.is-pr",
     "[gtm-ga4-module-type*=\"オーバーレイ\"]",
-    "[gtm-ga4-module-type*=\"ランキング広告\"]",
+    "[gtm-ga4-module-type*=\"広告\"]",
     "[gtm-ga4-module-type*=\"ジャックパネル\"]",
     "[gtm-action-name*=\"オーバーレイ\"]",
-    "[gtm-action-name*=\"ランキング広告\"]"
+    "[gtm-action-name*=\"ランキング広告\"]",
+    "[gtm-action-name*=\"広告\"]",
+    "#skyflag_link"
 ]
 
-all_css = sorted(list(set(BASE_CSS + list(css_selectors)[:200])))
+all_css = sorted(list(set(BASE_CSS + list(css_selectors)[:250])))
 
 final_rules = []
 
@@ -201,16 +205,19 @@ for d in sorted_domains[:3000]:
 
 # 3. 特定サイトの広告初期化スクリプトおよびアンチアドブロック妨害の完全遮断 (ファーストパーティ含む)
 custom_blocked_urls = [
-    # GameWith 自社広告配信スクリプト (フッター追従・動画広告初期化)
-    r"^https?://+([^:/]+\\.)?assets\\.gamewith\\.jp/js/dist/jp/gamewith/ad/.*",
-    r"^https?://+([^:/]+\\.)?rise\\.enhance\\.co\\.jp/.*",
-    r"^https?://+([^:/]+\\.)?flux-cdn\\.com/.*",
+    # GameWith 自社広告配信スクリプト・画像・トラッカー (フッター追従・動画広告初期化)
+    r"^https?://+([^:/]+\.)?assets\.gamewith\.jp/js/dist/jp/gamewith/ad/.*",
+    r"^https?://+([^:/]+\.)?img\.gamewith\.jp/ad/.*",
+    r"^https?://+([^:/]+\.)?rise\.enhance\.co\.jp/.*",
+    r"^https?://+([^:/]+\.)?flux-cdn\.com/.*",
+    r"^https?://+([^:/]+\.)?ats-wrapper\.privacymanager\.io/.*",
+    r"^https?://+([^:/]+\.)?.*\.onelink\.me/.*",
     
-    # EPORNER アンチアドブロック妨害
-    r"^https?://+([^:/]+\\.)?eporner\\.com/getadb/.*",
-    r"^https?://+([^:/]+\\.)?eporner\\.com/getadb.*",
-    r"^https?://+([^:/]+\\.)?eporner\\.com/dot/.*",
-    r"^https?://+([^:/]+\\.)?eporner\\.com/adCounter/.*"
+    # EPORNER アンチアドブロック妨害 & ポップアップ
+    r"^https?://+([^:/]+\.)?eporner\.com/getadb/.*",
+    r"^https?://+([^:/]+\.)?eporner\.com/getadb.*",
+    r"^https?://+([^:/]+\.)?eporner\.com/dot/.*",
+    r"^https?://+([^:/]+\.)?eporner\.com/adCounter/.*"
 ]
 
 for url_pat in custom_blocked_urls:
@@ -236,7 +243,7 @@ repo_root = os.path.dirname(script_dir)
 
 output_paths = [
     os.path.join(repo_root, "blockerList.json"),
-    os.path.join(repo_root, "ADBlock", "ContentBlockerExtension", "blockerList.json")
+    "/Volumes/BUFFALO SSD/AD block/ADBlock/ContentBlockerExtension/blockerList.json"
 ]
 
 for out_path in output_paths:

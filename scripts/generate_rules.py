@@ -167,16 +167,14 @@ BASE_CSS = [
     ".c-floating-ad", ".c-floating-ad-overlay",
     "img[src*=\"/ad/gamedboverlay/\"]",
     "img[src*=\"/ad/rankingrecommend/\"]",
-    "img[src*=\"/gamedb/autopanel/\"]",
     "a[href*=\"onelink.me\"]",
     "a[href*=\"eggryptox\"]",
-    "div.is-pr", "span.is-pr", "div._rank.is-pr",
+    "div._rank.is-pr",
     "[gtm-ga4-module-type*=\"オーバーレイ\"]",
-    "[gtm-ga4-module-type*=\"広告\"]",
+    "[gtm-ga4-module-type*=\"人気ランキング広告\"]",
     "[gtm-ga4-module-type*=\"ジャックパネル\"]",
     "[gtm-action-name*=\"オーバーレイ\"]",
     "[gtm-action-name*=\"ランキング広告\"]",
-    "[gtm-action-name*=\"広告\"]",
     "#skyflag_link"
 ]
 

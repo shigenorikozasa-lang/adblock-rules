@@ -1,39 +1,125 @@
-name: 毎週最新の広告ルールを自動更新・配信
+name: 毎週完全自律メンテナンス — 広告ルール自動更新
 
 on:
   schedule:
     # 毎週月曜日の日本時間 12:00 (UTC 03:00) に自動実行
     - cron: '0 3 * * 1'
-  workflow_dispatch: # GitHubの画面から手動でポチッと実行も可能
+  workflow_dispatch:
+    inputs:
+      force_refresh:
+        description: 'ハッシュキャッシュを無視して全ソースを強制再取得'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   update-rules:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # リポジトリへの自動プッシュ権限
+      contents: write
 
     steps:
-      - name: リポジトリのチェックアウト
+      - name: リポジトリのチェックアウト（全履歴）
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Pythonのセットアップ
-        uses: setup-python@v5
+      - name: Python 3.11 セットアップ
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 最新ルールの自動収集・生成スクリプトを実行
+      - name: 前回のルール数を記録
+        id: before
         run: |
-          python scripts/generate_rules.py
+          if [ -f blockerList.json ]; then
+            PREV_COUNT=$(python3 -c "import json; print(len(json.load(open('blockerList.json'))))")
+            echo "rule_count=${PREV_COUNT}" >> $GITHUB_OUTPUT
+            echo "前回のルール数: ${PREV_COUNT}"
+          else
+            echo "rule_count=0" >> $GITHUB_OUTPUT
+            echo "前回の blockerList.json が見つかりません"
+          fi
+
+      - name: ハッシュキャッシュ強制クリア（手動トリガー時）
+        if: ${{ github.event.inputs.force_refresh == 'true' }}
+        run: |
+          rm -f scripts/.last_upstream_hashes.json
+          echo "ハッシュキャッシュをクリアしました"
+
+      - name: 最新ルールの自動収集・生成スクリプトを実行
+        run: python scripts/generate_rules.py
+
+      - name: 生成ファイルの品質検証
+        id: validate
+        run: |
+          # JSON バリデーション
+          python3 -c "import json; json.load(open('blockerList.json'))" || { echo "❌ JSON パースエラー"; exit 1; }
+
+          # ファイルサイズチェック (10KB〜5MB)
+          SIZE=$(stat -c%s blockerList.json 2>/dev/null || stat -f%z blockerList.json)
+          echo "ファイルサイズ: ${SIZE} bytes"
+          if [ "$SIZE" -lt 10240 ]; then
+            echo "❌ ファイルが小さすぎます (< 10KB)"
+            exit 1
+          fi
+          if [ "$SIZE" -gt 5242880 ]; then
+            echo "⚠ ファイルが大きすぎます (> 5MB)、確認してください"
+          fi
+
+          # ルール数チェック
+          NEW_COUNT=$(python3 -c "import json; print(len(json.load(open('blockerList.json'))))")
+          echo "new_rule_count=${NEW_COUNT}" >> $GITHUB_OUTPUT
+          echo "今回のルール数: ${NEW_COUNT}"
+
+          # 前回比で50%以上減少なら中断
+          PREV=${{ steps.before.outputs.rule_count }}
+          if [ "$PREV" -gt 0 ]; then
+            THRESHOLD=$((PREV / 2))
+            if [ "$NEW_COUNT" -lt "$THRESHOLD" ]; then
+              echo "🚨 ルール数が前回 (${PREV}) から50%以上減少 (${NEW_COUNT})！上流ソース障害の可能性があるため中断します"
+              exit 1
+            fi
+          fi
+
+          echo "✅ 品質検証パス"
 
       - name: 変更があれば自動コミット＆プッシュ
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add blockerList.json ADBlock/ContentBlockerExtension/blockerList.json
+          git add blockerList.json CHANGELOG.md scripts/.last_upstream_hashes.json
           if git diff --staged --quiet; then
             echo "ルールに変更はありませんでした。"
           else
-            git commit -m "chore: 毎週の最新広告ブロックルールの自動更新 [skip ci]"
+            PREV=${{ steps.before.outputs.rule_count }}
+            NEW=${{ steps.validate.outputs.new_rule_count }}
+            DIFF=$((NEW - PREV))
+            DATE=$(date +%Y-%m-%d)
+            if [ "$DIFF" -ge 0 ]; then
+              DIFF_STR="+${DIFF}"
+            else
+              DIFF_STR="${DIFF}"
+            fi
+            git commit -m "chore(rules): 自動更新 ${DATE} — ${NEW}ルール (${DIFF_STR}) [skip ci]"
             git push origin main
-            echo "最新ルールをプッシュしました！"
+            echo "✅ 最新ルールをプッシュしました！"
+          fi
+
+      - name: ジョブサマリー出力
+        if: always()
+        run: |
+          PREV=${{ steps.before.outputs.rule_count }}
+          NEW=${{ steps.validate.outputs.new_rule_count || '不明' }}
+          echo "## 🛡️ ADBlock ルール自動更新レポート" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| 項目 | 値 |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| 実行日時 | $(date -u '+%Y-%m-%d %H:%M UTC') |" >> $GITHUB_STEP_SUMMARY
+          echo "| 前回ルール数 | ${PREV} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 今回ルール数 | ${NEW} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f CHANGELOG.md ]; then
+            echo "### 📋 変更ログ" >> $GITHUB_STEP_SUMMARY
+            cat CHANGELOG.md >> $GITHUB_STEP_SUMMARY
           fi
